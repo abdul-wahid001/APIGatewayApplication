@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "My API Gateway and Lambda function"
+
+Parameters:
+
+  LambdaGetUserFunctionName:
+    Type: "String"
+    AllowedPattern: "^[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+$"
+    Default: "getUserFunction"
+  LambdaPutUserFunctionName:
+    Type: "String"
+    AllowedPattern: "^[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+$"
+    Default: "putUserFunction"
+
+
+Resources:
+
+
+  UserResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt
+        - ApiGateway
+        - RootResourceId
+      PathPart: user
+
+  IdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref UserResource
+      PathPart: "{id}"
+
+
+  UsersModel:
+    Type: 'AWS::ApiGateway::Model'
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ContentType: application/json
+      Description: Schema for Pets example
+      Name: PetsModelNoFlatten
+      Schema:
+        $schema: 'http://json-schema.org/draft-04/schema#'
+        title: UsersAPIModel
+        type: object
+        properties:
+          id:
+            type: string
+          firsname:
+            type: string
+          lastname:
+            type: string
+  ApiGateway:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      Name: "user-api"
+      Description: "My USER API"
+
+  ApiGatewayPostMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: AWS_IAM
+      HttpMethod: "POST"
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "LambdaPostFunction.Arn"
+      MethodResponses:
+      
+      RequestModels:
+        application/json: !Ref UsersModel
+      ResourceId: !Ref UserResource
+      RestApiId: !Ref ApiGateway
+
+
+  ApiGatewayGetMethod:
+    Type: "AWS::ApiGateway::Method"
+    Properties:
+      AuthorizationType: AWS_IAM
+      HttpMethod: "GET"
+      Integration:
+        Type: "AWS_PROXY"
+        IntegrationHttpMethod: "POST"
+        Type: "AWS_PROXY"
+        Uri: !Sub
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations"
+          - lambdaArn: !GetAtt "LambdaGetFunction.Arn"
+      ResourceId: !Ref IdResource
+      RestApiId: !Ref ApiGateway
+
+
+  LambdaGetFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        S3Bucket: qautomation
+        S3Key: package/lambda_get_function.zip
+      Description: "Lambda get function"
+      FunctionName: !Ref LambdaGetUserFunctionName
+      Handler: "lambda_get_function.lambda_handler"
+      MemorySize: 128
+      Role: !GetAtt "LambdaIAMRole.Arn"
+      Runtime: "python3.7"
+      Timeout: 10
+
+
+  LambdaPostFunction:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Code:
+        S3Bucket: qautomation
+        S3Key: package/lambda_put_function.zip
+      Description: "Lambda get function"
+      FunctionName: !Ref LambdaPutUserFunctionName
+      Handler: "lambda_put_function.lambda_handler"
+      MemorySize: 128
+      Role: !GetAtt "LambdaIAMRole.Arn"
+      Runtime: "python3.7"
+      Timeout: 10
+
+
+  LambdaGetApiGatewayInvoke:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt "LambdaGetFunction.Arn"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+
+  LambdaPostApiGatewayInvoke:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt "LambdaPostFunction.Arn"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*"
+
+  LambdaIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+      Policies:
+        - PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            -   Action:
+                  - "dynamodb:PutItem"
+                  - "dynamodb:GetItem"
+                  - "dynamodb:DescribeTable"
+                Effect: "Allow"
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Users"
+
+
+            -   Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Effect: "Allow"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*"
+          PolicyName: "lambda"
+
+  LambdaGetLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaGetFunction}"
+      RetentionInDays: 90
+
+  LambdaPostLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaPostFunction}"
+      RetentionInDays: 90
+
+Outputs:
+  GETLambdaArn:
+    Value: !GetAtt "LambdaGetFunction.Arn"
+
+  POSTLambdaArn:
+    Value: !GetAtt "LambdaGetFunction.Arn"
